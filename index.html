@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>社内マッチングツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">社内<span>マッチング</span>ツール</div>
+  <div class="header-sub">Internal Matching Tool</div>
+</header>
+
+<main>
+  <div class="card">
+    <div class="card-title">データ入力</div>
+    <div class="info-box">
+      Googleスプレッドシートを <strong>全選択 → コピー</strong> してそのまま貼り付けてください。<br>
+      必須列：<code>user_id</code> <code>first_name_ja</code> <code>last_name_ja</code> <code>location_name</code> <code>category_type</code> <code>tag_name</code> <code>team_name</code> <code>join_date</code>（列順は自動検出）<br>
+      <code>category_type</code> が <code>1</code> の行を <strong>趣味</strong>、<code>3</code> の行を <strong>職種</strong> として読み取ります。<br>
+      必須項目が空欄のユーザーはスキップされ、警告として表示されます。
+    </div>
+    <textarea id="raw-data" placeholder="tag_id&#9;tag_name&#9;user_id&#9;first_name_ja&#9;last_name_ja&#9;...&#9;location_name&#9;category_type&#9;category_name&#9;team_id&#9;team_name&#9;email&#9;join_date&#9;birthday
+（スプレッドシートをそのままコピー＆ペーストしてください）"></textarea>
+    <div id="parse-err" class="err-msg"></div>
+    <div class="btn-row">
+      <button class="primary" onclick="parseAndRun()">▶ マッチング実行</button>
+      <button onclick="loadSample()">サンプルデータを読み込む</button>
+      <button onclick="clearAll()">クリア</button>
+    </div>
+  </div>
+
+  <div id="result-section" class="card">
+    <div class="card-title">マッチング結果</div>
+    <div class="stats" id="stats-area"></div>
+
+    <div class="tab-row">
+      <button class="tab active" onclick="filterType('all')">すべて</button>
+      <button class="tab" onclick="filterType('1')"><span class="badge badge-1">①</span> 東京同士</button>
+      <button class="tab" onclick="filterType('2')"><span class="badge badge-2">②</span> 大阪同士</button>
+      <button class="tab" onclick="filterType('3')"><span class="badge badge-3">③</span> 拠点またぎ</button>
+      <button class="tab" onclick="filterType('4')"><span class="badge badge-4">④</span> 職種マッチ</button>
+    </div>
+
+    <div class="filter-row">
+      <label>マッチ理由で絞り込み：</label>
+      <select id="reason-filter" onchange="renderTable()">
+        <option value="all">すべて</option>
+      </select>
+      <button class="copy-btn" onclick="copyTSV()">📋 TSVコピー（スプレッドシートに貼付け）</button>
+    </div>
+
+    <div class="table-wrap">
+      <div id="table-area"></div>
+    </div>
+  </div>
+</main>
+
+<script src="matching.js"></script>
+</body>
+</html>
