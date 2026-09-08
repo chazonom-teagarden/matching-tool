@@ -22,10 +22,25 @@
       Googleスプレッドシートを <strong>全選択 → コピー</strong> してそのまま貼り付けてください。<br>
       必須列：<code>user_id</code> <code>first_name_ja</code> <code>last_name_ja</code> <code>location_name</code> <code>category_type</code> <code>tag_name</code> <code>team_name</code> <code>join_date</code>（列順は自動検出）<br>
       <code>category_type</code> が <code>1</code> の行を <strong>趣味</strong>、<code>3</code> の行を <strong>職種</strong> として読み取ります。<br>
-      必須項目が空欄のユーザーはスキップされ、警告として表示されます。
+      必須項目が空欄のユーザーはスキップされ、警告として表示されます。<br>
+      下の「除外するメンバー」「除外するペア」欄は任意です。入力しなければ従来どおり全員が対象になります。
     </div>
     <textarea id="raw-data" placeholder="tag_id&#9;tag_name&#9;user_id&#9;first_name_ja&#9;last_name_ja&#9;...&#9;location_name&#9;category_type&#9;category_name&#9;team_id&#9;team_name&#9;email&#9;join_date&#9;birthday
 （スプレッドシートをそのままコピー＆ペーストしてください）"></textarea>
+
+    <div class="exclude-grid">
+      <div class="exclude-col">
+        <label class="exclude-label">除外するメンバー（任意）</label>
+        <div class="exclude-hint">退職予定者・休職者など、マッチング対象から完全に外す人を1行に1人ずつ「姓 名」で入力してください。</div>
+        <textarea id="exclude-members" class="exclude-textarea" placeholder="例：&#10;退職 太郎&#10;休職 花子"></textarea>
+      </div>
+      <div class="exclude-col">
+        <label class="exclude-label">除外するペア（任意）</label>
+        <div class="exclude-hint">組み合わせたくない2人を1行に1組、カンマ区切りの「姓 名, 姓 名」で入力してください。</div>
+        <textarea id="exclude-pairs" class="exclude-textarea" placeholder="例：&#10;山田 太郎, 鈴木 一郎"></textarea>
+      </div>
+    </div>
+
     <div id="parse-err" class="err-msg"></div>
     <div class="btn-row">
       <button class="primary" onclick="parseAndRun()">▶ マッチング実行</button>

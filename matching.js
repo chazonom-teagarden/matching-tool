@@ -32,9 +32,42 @@ function loadSample() {
 
 function clearAll() {
   document.getElementById('raw-data').value = '';
+  document.getElementById('exclude-members').value = '';
+  document.getElementById('exclude-pairs').value = '';
   document.getElementById('parse-err').style.display = 'none';
   document.getElementById('result-section').style.display = 'none';
   allMatches = [];
+}
+
+// =============================================
+// 除外設定のパース
+// =============================================
+// 姓・名の間の空白（半角/全角）を除去し、小文字化して比較する
+function normalizeName(s) {
+  return (s || '').replace(/[\s　]+/g, '').toLowerCase();
+}
+
+// 1行1名の「姓 名」リスト → 正規化した名前のSet
+function parseExcludedMembers(raw) {
+  return new Set(
+    raw.split('\n')
+      .map(l => l.trim())
+      .filter(l => l)
+      .map(normalizeName)
+  );
+}
+
+// 1行1組の「姓 名, 姓 名」リスト → 正規化ペアキー（アルファベット順結合）のSet
+function parseExcludedPairs(raw) {
+  const set = new Set();
+  raw.split('\n').forEach(line => {
+    const parts = line.split(',').map(s => s.trim()).filter(s => s);
+    if (parts.length !== 2) return;
+    const [a, b] = parts.map(normalizeName);
+    if (!a || !b) return;
+    set.add([a, b].sort().join('||'));
+  });
+  return set;
 }
 
 // =============================================
@@ -151,7 +184,7 @@ function overlap(a, b) {
   return a.filter(x => b.includes(x));
 }
 
-function match(people) {
+function match(people, excludedPairs) {
   const results = [];
   let id = 1;
 
@@ -160,6 +193,11 @@ function match(people) {
       const A = people[i], B = people[j];
 
       if (A.team === B.team) continue;
+
+      if (excludedPairs && excludedPairs.size) {
+        const pairKey = [normalizeName(A.name), normalizeName(B.name)].sort().join('||');
+        if (excludedPairs.has(pairKey)) continue;
+      }
 
       const yearDiff      = Math.abs(A.joinYear - B.joinYear);
       const sameLoc       = A.location === B.location;
@@ -210,18 +248,37 @@ function parseAndRun() {
   errEl.innerHTML = '';
 
   try {
-    const { people, skipped } = parseData(raw);
+    const { people: allPeople, skipped } = parseData(raw);
 
-    // スキップされた人を警告表示
+    // 除外メンバーを除く
+    const excludedNames = parseExcludedMembers(document.getElementById('exclude-members').value);
+    const excludedPeople = excludedNames.size
+      ? allPeople.filter(p => excludedNames.has(normalizeName(p.name)))
+      : [];
+    const people = excludedNames.size
+      ? allPeople.filter(p => !excludedNames.has(normalizeName(p.name)))
+      : allPeople;
+
+    const excludedPairs = parseExcludedPairs(document.getElementById('exclude-pairs').value);
+
+    // スキップされた人・除外した人を表示
+    const msgs = [];
     if (skipped.length > 0) {
       const names = skipped.map(s => `・${s.name}（${s.missing.join('、')}が空欄）`).join('<br>');
-      errEl.innerHTML = `⚠️ 以下のユーザーは必須項目が空欄のためスキップしました：<br>${names}`;
+      msgs.push(`⚠️ 以下のユーザーは必須項目が空欄のためスキップしました：<br>${names}`);
+    }
+    if (excludedPeople.length > 0) {
+      const names = excludedPeople.map(p => `・${p.name}`).join('<br>');
+      msgs.push(`ℹ️ 以下のユーザーは除外設定によりマッチング対象から外しました：<br>${names}`);
+    }
+    if (msgs.length > 0) {
+      errEl.innerHTML = msgs.join('<br>');
       errEl.style.display = 'block';
     }
 
     if (people.length < 2) throw new Error('有効な社員データが2名以上必要です');
 
-    allMatches = match(people);
+    allMatches = match(people, excludedPairs);
     currentType = 'all';
     renderStats(people.length);
     updateReasonFilter();
