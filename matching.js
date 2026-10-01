@@ -88,8 +88,12 @@ function parseExcludedPairs(raw) {
 //   category_type=1  → 趣味（tag_name を収集）
 //   category_type=3  → 職種（tag_name を収集）
 //
-// 空欄チェック（いずれか欠損のユーザーはスキップ）:
-//   first_name_ja, last_name_ja, location_name, team_name, join_date
+// 空欄チェック（いずれか欠損でもスキップせずマッチング対象に含める。
+// 該当する判定条件は以下のとおり不問として扱う）:
+//   first_name_ja, last_name_ja → 表示名のみに影響（欠損分は空のまま表示）
+//   team_name   → 「チームが異なる」判定ができないため、常に別チーム扱いにする
+//   location_name → 「東京/大阪同士」判定ができないため、常に拠点が異なる扱いにする
+//   join_date   → 「入社年2年差以上」判定を不問（常に条件を満たす）にする
 // =============================================
 function parseData(raw) {
   const lines = raw.trim().split('\n').filter(l => l.trim());
@@ -122,18 +126,22 @@ function parseData(raw) {
     const joinYear  = joinRaw ? parseInt(joinRaw.split('/')[0]) : NaN;
 
     if (!map.has(uid)) {
+      const name = (lastName + ' ' + firstName).trim() || `(氏名未登録:${uid.slice(0, 8)})`;
       map.set(uid, {
         uid,
         firstName,
         lastName,
-        name: lastName + ' ' + firstName,
+        name,
         location,
         team,
         joinYear,
         joinRaw,
         hobbies: [],
         roles: [],
-        // 空欄フラグ（後でチェック）
+        // 空欄のためマッチング判定上「別扱い」にするためのキー
+        // （同じ空欄同士を誤って「同じ拠点／同じチーム」と判定しないよう、ユーザーごとに一意にする）
+        _locKey: location || ('__blank_loc__' + uid),
+        _teamKey: team || ('__blank_team__' + uid),
         _missingFields: []
       });
     }
@@ -150,8 +158,7 @@ function parseData(raw) {
     }
   });
 
-  // 空欄チェック & 警告収集
-  const skipped = [];
+  // 空欄チェック（スキップはせず、警告表示用に記録するのみ）
   const people = [];
 
   map.forEach(p => {
@@ -162,14 +169,11 @@ function parseData(raw) {
     if (!p.team)       missing.push('team_name');
     if (!p.joinRaw || isNaN(p.joinYear)) missing.push('join_date');
 
-    if (missing.length > 0) {
-      skipped.push({ name: p.name || p.uid, missing });
-    } else {
-      people.push(p);
-    }
+    p._missingFields = missing;
+    people.push(p);
   });
 
-  return { people, skipped };
+  return { people };
 }
 
 // =============================================
@@ -192,28 +196,33 @@ function match(people, excludedPairs) {
     for (let j = i + 1; j < people.length; j++) {
       const A = people[i], B = people[j];
 
-      if (A.team === B.team) continue;
+      // team_nameが空欄の人は「別チーム」として扱う（_teamKeyがユーザーごとに一意になっているため自動で成立）
+      if (A._teamKey === B._teamKey) continue;
 
       if (excludedPairs && excludedPairs.size) {
         const pairKey = [normalizeName(A.name), normalizeName(B.name)].sort().join('||');
         if (excludedPairs.has(pairKey)) continue;
       }
 
-      const yearDiff      = Math.abs(A.joinYear - B.joinYear);
-      const sameLoc       = A.location === B.location;
+      // join_dateが空欄の人がいる場合は入社年差の条件を不問（常にOK）にする
+      const yearKnown = !isNaN(A.joinYear) && !isNaN(B.joinYear);
+      const yearDiff      = yearKnown ? Math.abs(A.joinYear - B.joinYear) : null;
+      const yearOk        = !yearKnown || yearDiff >= 2;
+      // location_nameが空欄の人は「拠点が異なる」側として扱う（_locKeyがユーザーごとに一意になっているため自動で成立）
+      const sameLoc       = A._locKey === B._locKey;
       const diffLoc       = !sameLoc;
       const sharedHobbies = overlap(A.hobbies, B.hobbies);
       const sharedRoles   = overlap(A.roles, B.roles);
 
       // ①東京同士：入社年2年差以上 & 趣味が同じ
-      if (sameLoc && A.location === '東京' && yearDiff >= 2 && sharedHobbies.length) {
+      if (sameLoc && A._locKey === '東京' && yearOk && sharedHobbies.length) {
         results.push({
           id: id++, type: 1, typeLabel: '①東京同士', A, B,
           reason: '趣味：' + sharedHobbies.join('・')
         });
       }
       // ②大阪同士：入社年2年差以上 & 趣味が同じ
-      else if (sameLoc && A.location === '大阪' && yearDiff >= 2 && sharedHobbies.length) {
+      else if (sameLoc && A._locKey === '大阪' && yearOk && sharedHobbies.length) {
         results.push({
           id: id++, type: 2, typeLabel: '②大阪同士', A, B,
           reason: '趣味：' + sharedHobbies.join('・')
@@ -248,7 +257,7 @@ function parseAndRun() {
   errEl.innerHTML = '';
 
   try {
-    const { people: allPeople, skipped } = parseData(raw);
+    const { people: allPeople } = parseData(raw);
 
     // 除外メンバーを除く
     const excludedNames = parseExcludedMembers(document.getElementById('exclude-members').value);
@@ -261,11 +270,14 @@ function parseAndRun() {
 
     const excludedPairs = parseExcludedPairs(document.getElementById('exclude-pairs').value);
 
-    // スキップされた人・除外した人を表示
+    // 空欄項目があった人・除外設定で外した人を表示
     const msgs = [];
-    if (skipped.length > 0) {
-      const names = skipped.map(s => `・${s.name}（${s.missing.join('、')}が空欄）`).join('<br>');
-      msgs.push(`⚠️ 以下のユーザーは必須項目が空欄のためスキップしました：<br>${names}`);
+    const withMissing = people.filter(p => p._missingFields.length > 0);
+    if (withMissing.length > 0) {
+      const names = withMissing
+        .map(p => `・${p.name}さんは${p._missingFields.join('、')}が空欄でしたが、マッチング対象に含めました（該当条件は不問として扱います）`)
+        .join('<br>');
+      msgs.push(`ℹ️ 以下のユーザーは一部項目が空欄でした：<br>${names}`);
     }
     if (excludedPeople.length > 0) {
       const names = excludedPeople.map(p => `・${p.name}`).join('<br>');
@@ -330,6 +342,16 @@ function updateReasonFilter() {
   });
 }
 
+function fmtYear(y) {
+  return isNaN(y) ? '不明' : y;
+}
+function fmtLoc(loc) {
+  return loc || '拠点不明';
+}
+function fmtYearDiff(A, B) {
+  return (isNaN(A.joinYear) || isNaN(B.joinYear)) ? 'ー' : (Math.abs(A.joinYear - B.joinYear) + '年');
+}
+
 const badgeHtml = {
   1: '<span class="badge badge-1">①東京</span>',
   2: '<span class="badge badge-2">②大阪</span>',
@@ -353,20 +375,19 @@ function renderTable() {
     <th style="width:52px">年差</th>
   </tr></thead><tbody>`;
   list.forEach(m => {
-    const diff = Math.abs(m.A.joinYear - m.B.joinYear);
     html += `<tr>
       <td class="no-num">${m.id}</td>
       <td>${badgeHtml[m.type]}</td>
       <td>
         <div class="person-name">${m.A.name}</div>
-        <div class="person-meta">${m.A.location} · ${m.A.team} · ${m.A.joinYear}</div>
+        <div class="person-meta">${fmtLoc(m.A.location)} · ${m.A.team || '(チーム不明)'} · ${fmtYear(m.A.joinYear)}</div>
       </td>
       <td>
         <div class="person-name">${m.B.name}</div>
-        <div class="person-meta">${m.B.location} · ${m.B.team} · ${m.B.joinYear}</div>
+        <div class="person-meta">${fmtLoc(m.B.location)} · ${m.B.team || '(チーム不明)'} · ${fmtYear(m.B.joinYear)}</div>
       </td>
       <td class="reason-text">${m.reason}</td>
-      <td class="year-diff">${diff}年</td>
+      <td class="year-diff">${fmtYearDiff(m.A, m.B)}</td>
     </tr>`;
   });
   html += '</tbody></table>';
@@ -377,7 +398,7 @@ function copyTSV() {
   const list = getFiltered();
   const header = 'No.\tパターン\tAさん\tA拠点\tAチーム\tA入社年\tBさん\tB拠点\tBチーム\tB入社年\tマッチ理由\t入社年差';
   const rows = list.map(m =>
-    `${m.id}\t${m.typeLabel}\t${m.A.name}\t${m.A.location}\t${m.A.team}\t${m.A.joinYear}\t${m.B.name}\t${m.B.location}\t${m.B.team}\t${m.B.joinYear}\t${m.reason}\t${Math.abs(m.A.joinYear - m.B.joinYear)}年`
+    `${m.id}\t${m.typeLabel}\t${m.A.name}\t${fmtLoc(m.A.location)}\t${m.A.team || '(チーム不明)'}\t${fmtYear(m.A.joinYear)}\t${m.B.name}\t${fmtLoc(m.B.location)}\t${m.B.team || '(チーム不明)'}\t${fmtYear(m.B.joinYear)}\t${m.reason}\t${fmtYearDiff(m.A, m.B)}`
   );
   navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
     const btn = event.target.closest('button');

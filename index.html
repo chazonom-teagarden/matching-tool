@@ -22,7 +22,7 @@
       Googleスプレッドシートを <strong>全選択 → コピー</strong> してそのまま貼り付けてください。<br>
       必須列：<code>user_id</code> <code>first_name_ja</code> <code>last_name_ja</code> <code>location_name</code> <code>category_type</code> <code>tag_name</code> <code>team_name</code> <code>join_date</code>（列順は自動検出）<br>
       <code>category_type</code> が <code>1</code> の行を <strong>趣味</strong>、<code>3</code> の行を <strong>職種</strong> として読み取ります。<br>
-      必須項目が空欄のユーザーはスキップされ、警告として表示されます。<br>
+      必須項目が空欄でもスキップせず、マッチング対象に含めます（該当する判定条件は不問として扱い、警告として表示されます）。<br>
       下の「除外するメンバー」「除外するペア」欄は任意です。入力しなければ従来どおり全員が対象になります。
     </div>
     <textarea id="raw-data" placeholder="tag_id&#9;tag_name&#9;user_id&#9;first_name_ja&#9;last_name_ja&#9;...&#9;location_name&#9;category_type&#9;category_name&#9;team_id&#9;team_name&#9;email&#9;join_date&#9;birthday
