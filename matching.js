@@ -22,6 +22,9 @@ ae11e82c-c001-4d68-9a2c-303d276fcd06\tディレクター\tec48b67a-0b2f-4735-ac7
 // =============================================
 let allMatches = [];
 let currentType = 'all';
+let lastMatchedGlobal = new Map(); // 正規化した名前 → 最後にマッチした月キー
+let targetKeyGlobal = null;        // 対象年月（monthKey）
+let autoSelected = { 1: [], 2: [], 3: [] }; // 直近の自動選出結果
 
 // =============================================
 // UI操作
@@ -34,9 +37,15 @@ function clearAll() {
   document.getElementById('raw-data').value = '';
   document.getElementById('exclude-members').value = '';
   document.getElementById('exclude-pairs').value = '';
+  document.getElementById('history-data').value = '';
+  document.getElementById('target-month').value = '';
   document.getElementById('parse-err').style.display = 'none';
   document.getElementById('result-section').style.display = 'none';
+  document.getElementById('autoselect-section').style.display = 'none';
   allMatches = [];
+  lastMatchedGlobal = new Map();
+  targetKeyGlobal = null;
+  autoSelected = { 1: [], 2: [], 3: [] };
 }
 
 // =============================================
@@ -68,6 +77,73 @@ function parseExcludedPairs(raw) {
     set.add([a, b].sort().join('||'));
   });
   return set;
+}
+
+// =============================================
+// マッチング履歴のパース・年月計算
+// =============================================
+// "YYYY-MM" → 月を一意に表す整数（比較・差分計算用）。不正な形式はnull
+function monthKey(s) {
+  const m = /^(\d{4})-(\d{2})$/.exec((s || '').trim());
+  if (!m) return null;
+  const year = parseInt(m[1], 10), mon = parseInt(m[2], 10);
+  if (mon < 1 || mon > 12) return null;
+  return year * 12 + (mon - 1);
+}
+
+// 履歴TSV（ヘッダー「年月・Aさん・Bさん」付き、または年月・A・Bの3列のみ）をパース
+function parseHistory(raw) {
+  const text = (raw || '').trim();
+  if (!text) return [];
+  const lines = text.split('\n').filter(l => l.trim());
+  const headers = lines[0].split('\t').map(h => h.trim());
+  const hasHeader = headers.includes('年月') && headers.includes('Aさん') && headers.includes('Bさん');
+  const idx = hasHeader
+    ? { month: headers.indexOf('年月'), a: headers.indexOf('Aさん'), b: headers.indexOf('Bさん') }
+    : { month: 0, a: 1, b: 2 };
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  const records = [];
+  dataLines.forEach(line => {
+    const cols = line.split('\t');
+    const mk = monthKey(cols[idx.month]);
+    const a = (cols[idx.a] || '').trim();
+    const b = (cols[idx.b] || '').trim();
+    if (mk === null || !a || !b) return;
+    records.push({ monthKey: mk, a: normalizeName(a), b: normalizeName(b) });
+  });
+  return records;
+}
+
+// 履歴から「12ヶ月以内の同一ペア」「前月マッチ済みメンバー」「各人の最終マッチ月」を算出
+function deriveHistoryExclusions(history, targetKey) {
+  const excludedPairs = new Set();
+  const prevMonthMembers = new Set();
+  const lastMatched = new Map();
+
+  if (targetKey === null) return { excludedPairs, prevMonthMembers, lastMatched };
+
+  history.forEach(r => {
+    const diff = targetKey - r.monthKey;
+    if (diff >= 1 && diff <= 12) {
+      excludedPairs.add([r.a, r.b].sort().join('||'));
+    }
+    if (diff === 1) {
+      prevMonthMembers.add(r.a);
+      prevMonthMembers.add(r.b);
+    }
+    if (diff >= 1) {
+      if (!lastMatched.has(r.a) || lastMatched.get(r.a) < r.monthKey) lastMatched.set(r.a, r.monthKey);
+      if (!lastMatched.has(r.b) || lastMatched.get(r.b) < r.monthKey) lastMatched.set(r.b, r.monthKey);
+    }
+  });
+  return { excludedPairs, prevMonthMembers, lastMatched };
+}
+
+// 対象年月を基準にした「待機月数」。未マッチ（初回）はInfinity
+function waitMonths(normalizedName, lastMatched, targetKey) {
+  if (targetKey === null || !lastMatched.has(normalizedName)) return Infinity;
+  return targetKey - lastMatched.get(normalizedName);
 }
 
 // =============================================
@@ -255,18 +331,33 @@ function parseAndRun() {
   try {
     const { people: allPeople } = parseData(raw);
 
-    // 除外メンバーを除く
+    // 対象年月・履歴データのパース
+    const targetMonthRaw = document.getElementById('target-month').value;
+    const historyRaw = document.getElementById('history-data').value;
+    const targetKey = targetMonthRaw ? monthKey(targetMonthRaw) : null;
+    if (historyRaw.trim() && targetKey === null) {
+      throw new Error('履歴データを使う場合は「対象年月」を入力してください。');
+    }
+    const history = parseHistory(historyRaw);
+    const { excludedPairs: historyExcludedPairs, prevMonthMembers, lastMatched } =
+      deriveHistoryExclusions(history, targetKey);
+    lastMatchedGlobal = lastMatched;
+    targetKeyGlobal = targetKey;
+
+    // 除外メンバーを除く（手動指定 ＋ 履歴による前月マッチ済みメンバー）
     const excludedNames = parseExcludedMembers(document.getElementById('exclude-members').value);
-    const excludedPeople = excludedNames.size
-      ? allPeople.filter(p => excludedNames.has(normalizeName(p.name)))
-      : [];
-    const people = excludedNames.size
-      ? allPeople.filter(p => !excludedNames.has(normalizeName(p.name)))
-      : allPeople;
+    const excludedPeople = allPeople.filter(p =>
+      excludedNames.has(normalizeName(p.name)) || prevMonthMembers.has(normalizeName(p.name))
+    );
+    const people = allPeople.filter(p =>
+      !excludedNames.has(normalizeName(p.name)) && !prevMonthMembers.has(normalizeName(p.name))
+    );
 
+    // 除外ペア（手動指定 ＋ 履歴による12ヶ月以内の同一ペア）
     const excludedPairs = parseExcludedPairs(document.getElementById('exclude-pairs').value);
+    historyExcludedPairs.forEach(k => excludedPairs.add(k));
 
-    // 空欄項目があった人・除外設定で外した人を表示
+    // 空欄項目があった人・除外した人を表示
     const msgs = [];
     const withMissing = people.filter(p => p._missingFields.length > 0);
     if (withMissing.length > 0) {
@@ -277,7 +368,10 @@ function parseAndRun() {
     }
     if (excludedPeople.length > 0) {
       const names = excludedPeople.map(p => `・${p.name}`).join('<br>');
-      msgs.push(`ℹ️ 以下のユーザーは除外設定によりマッチング対象から外しました：<br>${names}`);
+      msgs.push(`ℹ️ 以下のユーザーは除外設定（手動指定または前月マッチ済み）によりマッチング対象から外しました：<br>${names}`);
+    }
+    if (historyExcludedPairs.size > 0) {
+      msgs.push(`ℹ️ 履歴から、直近12ヶ月以内にマッチ済みの組み合わせ ${historyExcludedPairs.size}件 を除外しました。`);
     }
     if (msgs.length > 0) {
       errEl.innerHTML = msgs.join('<br>');
@@ -292,6 +386,7 @@ function parseAndRun() {
     updateReasonFilter();
     renderTable();
     document.getElementById('result-section').style.display = 'block';
+    document.getElementById('autoselect-section').style.display = 'none';
     document.getElementById('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     errEl.innerHTML += (errEl.innerHTML ? '<br>' : '') + '❌ ' + e.message;
@@ -396,6 +491,119 @@ function copyTSV() {
   const rows = list.map(m =>
     `${m.id}\t${m.typeLabel}\t${m.A.name}\t${fmtLoc(m.A.location)}\t${m.A.team || '(チーム不明)'}\t${fmtYear(m.A.joinYear)}\t${m.B.name}\t${fmtLoc(m.B.location)}\t${m.B.team || '(チーム不明)'}\t${fmtYear(m.B.joinYear)}\t${m.reason}\t${fmtYearDiff(m.A, m.B)}`
   );
+  navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
+    const btn = event.target.closest('button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '✓ コピーしました！';
+    btn.style.color = 'var(--accent)';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 2000);
+  });
+}
+
+// =============================================
+// 公平性優先の自動選出（①②③ 各10組）
+// =============================================
+// 選出基準：
+//   1. 待機月数（対象年月の時点で最後にマッチしてから何ヶ月経ったか。未マッチは最優先の「初回」）が長い順
+//   2. 同じ待機月数ならマッチ理由の優先度（趣味＞職種＞共通点なし）が高い順
+// 1人が同じ月に複数カテゴリで選ばれないよう、カテゴリ間でも選出済みの人は除外する
+function autoSelect() {
+  const errEl = document.getElementById('parse-err');
+  if (!allMatches.length) {
+    errEl.innerHTML = '❌ 先に「マッチング実行」を行ってください。';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const buckets = { 1: [], 2: [], 3: [] };
+  allMatches.forEach(m => { if (buckets[m.type]) buckets[m.type].push(m); });
+
+  const used = new Set();
+  const picked = { 1: [], 2: [], 3: [] };
+
+  [1, 2, 3].forEach(type => {
+    const scored = buckets[type].map(m => {
+      const waitA = waitMonths(normalizeName(m.A.name), lastMatchedGlobal, targetKeyGlobal);
+      const waitB = waitMonths(normalizeName(m.B.name), lastMatchedGlobal, targetKeyGlobal);
+      return { m, minWait: Math.min(waitA, waitB) };
+    });
+    scored.sort((x, y) => {
+      if (x.minWait !== y.minWait) {
+        if (x.minWait === Infinity) return -1;
+        if (y.minWait === Infinity) return 1;
+        return y.minWait - x.minWait;
+      }
+      return x.m.tier - y.m.tier;
+    });
+    for (const s of scored) {
+      if (picked[type].length >= 10) break;
+      const nameA = normalizeName(s.m.A.name), nameB = normalizeName(s.m.B.name);
+      if (used.has(nameA) || used.has(nameB)) continue;
+      used.add(nameA);
+      used.add(nameB);
+      picked[type].push(s);
+    }
+  });
+
+  autoSelected = picked;
+
+  const noteEl = document.getElementById('autoselect-note');
+  if (targetKeyGlobal === null) {
+    noteEl.innerHTML = 'ℹ️ 対象年月・履歴が未入力のため、全員「初回」扱いで選出しています（待機月数による優先付けはできません）。';
+    noteEl.style.display = 'block';
+  } else {
+    noteEl.style.display = 'none';
+  }
+
+  renderAutoSelect();
+  document.getElementById('autoselect-section').style.display = 'block';
+  document.getElementById('autoselect-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function waitTagHtml(m) {
+  const waitA = waitMonths(normalizeName(m.A.name), lastMatchedGlobal, targetKeyGlobal);
+  const waitB = waitMonths(normalizeName(m.B.name), lastMatchedGlobal, targetKeyGlobal);
+  const minWait = Math.min(waitA, waitB);
+  if (minWait === Infinity) return '<span class="wait-tag first-time">初回</span>';
+  return `<span class="wait-tag">待機${minWait}ヶ月</span>`;
+}
+
+const autoSelectBadge = { 1: '①東京', 2: '②大阪', 3: '③またぎ' };
+
+function renderAutoSelect() {
+  const grid = document.getElementById('autoselect-grid');
+  let html = '';
+  [1, 2, 3].forEach(type => {
+    const list = autoSelected[type];
+    html += `<div class="as-card">
+      <div class="as-card-head">
+        <span class="badge badge-${type}">${autoSelectBadge[type]}</span>
+        <span class="as-count">${list.length}/10</span>
+      </div>`;
+    if (!list.length) {
+      html += '<div class="as-empty">候補がありません</div>';
+    } else {
+      list.forEach(s => {
+        html += `<div class="as-pair">
+          <div class="as-pair-names">${s.m.A.name} × ${s.m.B.name}</div>
+          <div class="as-pair-meta">${s.m.reason}${waitTagHtml(s.m)}</div>
+        </div>`;
+      });
+    }
+    html += '</div>';
+  });
+  grid.innerHTML = html;
+}
+
+function copyAutoSelectTSV() {
+  const monthLabel = document.getElementById('target-month').value || '(対象年月未設定)';
+  const header = '年月\tAさん\tBさん\tパターン\t理由';
+  const rows = [];
+  [1, 2, 3].forEach(type => {
+    autoSelected[type].forEach(s => {
+      rows.push(`${monthLabel}\t${s.m.A.name}\t${s.m.B.name}\t${s.m.typeLabel}\t${s.m.reason}`);
+    });
+  });
   navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
     const btn = event.target.closest('button');
     const orig = btn.innerHTML;

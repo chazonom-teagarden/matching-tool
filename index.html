@@ -42,11 +42,34 @@
       </div>
     </div>
 
+    <div class="exclude-grid" style="margin-top:12px">
+      <div class="exclude-col">
+        <label class="exclude-label">過去のマッチング履歴（任意・貼り付け）</label>
+        <div class="exclude-hint">履歴シートから「年月・Aさん・Bさん」のTSVを貼り付けてください。12ヶ月以内に組んだ同一ペアと、前月マッチ済みのメンバーを自動で除外します。</div>
+        <textarea id="history-data" class="exclude-textarea" placeholder="年月&#9;Aさん&#9;Bさん&#9;パターン&#9;理由&#10;2026-09&#9;山田 太郎&#9;鈴木 花子&#9;①東京同士&#9;趣味：コーヒー"></textarea>
+      </div>
+      <div class="exclude-col">
+        <label class="exclude-label">対象年月（履歴を使う場合は必須）</label>
+        <div class="exclude-hint">今回アナウンスする年月です。履歴の12ヶ月判定・前月除外・公平性優先選出の基準になります。</div>
+        <input type="month" id="target-month" style="width:160px;height:36px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2);color:var(--text);padding:0 10px;font-family:'DM Mono',monospace;">
+      </div>
+    </div>
+
     <div id="parse-err" class="err-msg"></div>
     <div class="btn-row">
       <button class="primary" onclick="parseAndRun()">▶ マッチング実行</button>
+      <button onclick="autoSelect()">⚖ 公平性優先で自動選出</button>
       <button onclick="loadSample()">サンプルデータを読み込む</button>
       <button onclick="clearAll()">クリア</button>
+    </div>
+  </div>
+
+  <div id="autoselect-section" class="card" style="display:none">
+    <div class="card-title">今月の自動選出結果（①②③ 各10組）</div>
+    <div id="autoselect-note" class="info-box" style="display:none"></div>
+    <div class="autoselect-grid" id="autoselect-grid"></div>
+    <div class="btn-row">
+      <button class="copy-btn" onclick="copyAutoSelectTSV()">📋 履歴追記用TSVをコピー</button>
     </div>
   </div>
 

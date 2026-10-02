@@ -94,6 +94,26 @@ textarea:focus{outline:none;border-color:var(--accent);background:var(--surface)
   .exclude-grid{grid-template-columns:1fr;}
 }
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+/* 自動選出 */
+#autoselect-section{display:none;}
+.autoselect-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.as-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;}
+.as-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.as-count{font-family:'DM Mono',monospace;font-size:12px;color:var(--text3);}
+.as-empty{font-size:12px;color:var(--text3);text-align:center;padding:16px 0;}
+.as-pair{padding:8px 0;border-top:1px solid var(--border);font-size:12.5px;}
+.as-pair:first-of-type{border-top:none;}
+.as-pair-names{font-weight:700;}
+.as-pair-meta{color:var(--text3);font-size:11px;margin-top:2px;}
+.wait-tag{
+  display:inline-block;font-size:10.5px;font-family:'DM Mono',monospace;
+  padding:1px 7px;border-radius:999px;background:var(--surface);
+  border:1px solid var(--border);color:var(--text2);margin-left:6px;white-space:nowrap;
+}
+.wait-tag.first-time{color:var(--accent);border-color:var(--accent);}
+@media(max-width:640px){
+  .autoselect-grid{grid-template-columns:1fr;}
+}
 button{
   font-family:'Noto Sans JP',sans-serif;font-size:13px;font-weight:500;
   padding:8px 18px;border-radius:var(--radius);border:1px solid var(--border);
