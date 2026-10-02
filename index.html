@@ -22,6 +22,7 @@
       Googleスプレッドシートを <strong>全選択 → コピー</strong> してそのまま貼り付けてください。<br>
       必須列：<code>user_id</code> <code>first_name_ja</code> <code>last_name_ja</code> <code>location_name</code> <code>category_type</code> <code>tag_name</code> <code>team_name</code> <code>join_date</code>（列順は自動検出）<br>
       <code>category_type</code> が <code>1</code> の行を <strong>趣味</strong>、<code>3</code> の行を <strong>職種</strong> として読み取ります。<br>
+      マッチングの絶対条件は<strong>チームが異なること</strong>のみです。趣味・職種が共通していればマッチ理由として優先的に表示されますが、共通点がなくてもチームが違えば候補になります（入社年差は判定に使用しません）。<br>
       必須項目が空欄でもスキップせず、マッチング対象に含めます（該当する判定条件は不問として扱い、警告として表示されます）。<br>
       下の「除外するメンバー」「除外するペア」欄は任意です。入力しなければ従来どおり全員が対象になります。
     </div>
@@ -58,7 +59,7 @@
       <button class="tab" onclick="filterType('1')"><span class="badge badge-1">①</span> 東京同士</button>
       <button class="tab" onclick="filterType('2')"><span class="badge badge-2">②</span> 大阪同士</button>
       <button class="tab" onclick="filterType('3')"><span class="badge badge-3">③</span> 拠点またぎ</button>
-      <button class="tab" onclick="filterType('4')"><span class="badge badge-4">④</span> 職種マッチ</button>
+      <button class="tab" onclick="filterType('4')"><span class="badge badge-4">④</span> その他拠点同士</button>
     </div>
 
     <div class="filter-row">

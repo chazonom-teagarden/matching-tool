@@ -179,13 +179,28 @@ function parseData(raw) {
 // =============================================
 // マッチングロジック
 // =============================================
-// 条件①：東京同士 / 入社年2年差以上 / 趣味が同じ / チームが異なる
-// 条件②：大阪同士 / 入社年2年差以上 / 趣味が同じ / チームが異なる
-// 条件③：拠点が異なる / 趣味が同じ / チームが異なる
-// 条件④：拠点不問 / 職種が同じ / チームが異なる
+// 絶対条件：チームが異なること（これだけ。入社年差・趣味・職種の共通は不問）
+//
+// カテゴリ分け（表示用。拠点のみで決まり、優先順位には影響しない）：
+//   ①東京同士／②大阪同士／③拠点またぎ／④その他拠点同士（東京・大阪以外の同拠点ペア）
+//
+// マッチ理由の優先順位（タグの登録数に機会が左右されないよう、必須条件ではなく
+// 「あれば使う」ラベルとして扱う）：
+//   1. 趣味が1つ以上共通 → 「趣味：〇〇」
+//   2. （趣味共通なしで）職種が1つ以上共通 → 「職種：〇〇」
+//   3. どちらもなし → 「共通点なし（チーム違いのみ）」
 // =============================================
 function overlap(a, b) {
   return a.filter(x => b.includes(x));
+}
+
+function classifyLocation(A, B) {
+  if (A._locKey === B._locKey) {
+    if (A._locKey === '東京') return { type: 1, label: '①東京同士' };
+    if (A._locKey === '大阪') return { type: 2, label: '②大阪同士' };
+    return { type: 4, label: '④その他拠点同士' };
+  }
+  return { type: 3, label: '③拠点またぎ' };
 }
 
 function match(people, excludedPairs) {
@@ -204,44 +219,25 @@ function match(people, excludedPairs) {
         if (excludedPairs.has(pairKey)) continue;
       }
 
-      // join_dateが空欄の人がいる場合は入社年差の条件を不問（常にOK）にする
-      const yearKnown = !isNaN(A.joinYear) && !isNaN(B.joinYear);
-      const yearDiff      = yearKnown ? Math.abs(A.joinYear - B.joinYear) : null;
-      const yearOk        = !yearKnown || yearDiff >= 2;
-      // location_nameが空欄の人は「拠点が異なる」側として扱う（_locKeyがユーザーごとに一意になっているため自動で成立）
-      const sameLoc       = A._locKey === B._locKey;
-      const diffLoc       = !sameLoc;
+      const loc           = classifyLocation(A, B);
       const sharedHobbies = overlap(A.hobbies, B.hobbies);
       const sharedRoles   = overlap(A.roles, B.roles);
 
-      // ①東京同士：入社年2年差以上 & 趣味が同じ
-      if (sameLoc && A._locKey === '東京' && yearOk && sharedHobbies.length) {
-        results.push({
-          id: id++, type: 1, typeLabel: '①東京同士', A, B,
-          reason: '趣味：' + sharedHobbies.join('・')
-        });
+      let reason, tier;
+      if (sharedHobbies.length) {
+        reason = '趣味：' + sharedHobbies.join('・');
+        tier = 1;
+      } else if (sharedRoles.length) {
+        reason = '職種：' + sharedRoles.join('・');
+        tier = 2;
+      } else {
+        reason = '共通点なし（チーム違いのみ）';
+        tier = 3;
       }
-      // ②大阪同士：入社年2年差以上 & 趣味が同じ
-      else if (sameLoc && A._locKey === '大阪' && yearOk && sharedHobbies.length) {
-        results.push({
-          id: id++, type: 2, typeLabel: '②大阪同士', A, B,
-          reason: '趣味：' + sharedHobbies.join('・')
-        });
-      }
-      // ③拠点またぎ：趣味が同じ
-      else if (diffLoc && sharedHobbies.length) {
-        results.push({
-          id: id++, type: 3, typeLabel: '③拠点またぎ', A, B,
-          reason: '趣味：' + sharedHobbies.join('・')
-        });
-      }
-      // ④職種マッチ：拠点不問・職種が同じ
-      else if (sharedRoles.length) {
-        results.push({
-          id: id++, type: 4, typeLabel: '④職種マッチ', A, B,
-          reason: '職種：' + sharedRoles.join('・')
-        });
-      }
+
+      results.push({
+        id: id++, type: loc.type, typeLabel: loc.label, A, B, reason, tier
+      });
     }
   }
   return results;
@@ -314,7 +310,7 @@ function renderStats(total) {
     <div class="stat"><div class="stat-num" style="color:var(--c1)">${counts[0]}</div><div class="stat-label">①東京同士</div></div>
     <div class="stat"><div class="stat-num" style="color:var(--c2)">${counts[1]}</div><div class="stat-label">②大阪同士</div></div>
     <div class="stat"><div class="stat-num" style="color:var(--c3)">${counts[2]}</div><div class="stat-label">③拠点またぎ</div></div>
-    <div class="stat"><div class="stat-num" style="color:var(--c4)">${counts[3]}</div><div class="stat-label">④職種マッチ</div></div>`;
+    <div class="stat"><div class="stat-num" style="color:var(--c4)">${counts[3]}</div><div class="stat-label">④その他拠点同士</div></div>`;
 }
 
 function filterType(t) {
@@ -356,7 +352,7 @@ const badgeHtml = {
   1: '<span class="badge badge-1">①東京</span>',
   2: '<span class="badge badge-2">②大阪</span>',
   3: '<span class="badge badge-3">③またぎ</span>',
-  4: '<span class="badge badge-4">④職種</span>'
+  4: '<span class="badge badge-4">④他拠点</span>'
 };
 
 function renderTable() {
